@@ -156,7 +156,7 @@ export default function Home() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col p-8 md:p-24">
+    <div className="flex flex-col p-8 md:p-12">
       <div className="w-full max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -365,6 +365,6 @@ export default function Home() {
           </CardContent>
         </Card>
       </div>
-    </main>
+    </div>
   );
 }
