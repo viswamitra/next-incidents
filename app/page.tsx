@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,6 +12,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Card,
   CardContent,
   CardDescription,
@@ -19,10 +27,16 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Trash2, Plus, Loader2, AlertCircle } from 'lucide-react';
+import { Trash2, Plus, Loader2, AlertCircle, Search, X } from 'lucide-react';
 
 type IncidentStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 type IncidentPriority = 'low' | 'medium' | 'high' | 'critical';
+
+interface SourceComponent {
+  name: string;
+  contributionStartTime: string;
+  contributionEndTime: string;
+}
 
 interface Incident {
   id: number;
@@ -30,6 +44,9 @@ interface Incident {
   description: string;
   status: IncidentStatus;
   priority: IncidentPriority;
+  sourceComponents: SourceComponent[];
+  incidentStartTime: string;
+  incidentEndTime: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -65,11 +82,17 @@ const priorityLabels: Record<IncidentPriority, string> = {
 export default function Home() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     priority: 'medium' as IncidentPriority,
+    sourceComponents: [
+      { name: '', contributionStartTime: '', contributionEndTime: '' },
+    ] as SourceComponent[],
+    incidentStartTime: '',
+    incidentEndTime: '',
   });
 
   useEffect(() => {
@@ -89,24 +112,103 @@ export default function Home() {
     }
   };
 
+  const filteredIncidents = useMemo(() => {
+    if (!searchQuery.trim()) return incidents;
+    const query = searchQuery.toLowerCase();
+    return incidents.filter(
+      (incident) =>
+        incident.title.toLowerCase().includes(query) ||
+        incident.description.toLowerCase().includes(query) ||
+        incident.sourceComponents.some((comp) =>
+          comp.name.toLowerCase().includes(query)
+        )
+    );
+  }, [incidents, searchQuery]);
+
   const addIncident = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim() || !formData.description.trim()) return;
+
+    // Validate source components
+    const validComponents = formData.sourceComponents.filter(
+      (comp) =>
+        comp.name.trim() &&
+        comp.contributionStartTime &&
+        comp.contributionEndTime
+    );
+
+    if (validComponents.length === 0) {
+      alert('Please add at least one valid source component');
+      return;
+    }
+
+    if (!formData.incidentStartTime) {
+      alert('Please provide an incident start time');
+      return;
+    }
 
     try {
       const response = await fetch('/api/incidents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+          priority: formData.priority,
+          sourceComponents: validComponents,
+          incidentStartTime: formData.incidentStartTime,
+          incidentEndTime: formData.incidentEndTime || null,
+        }),
       });
 
       const data = await response.json();
       setIncidents([...incidents, data.incident]);
-      setFormData({ title: '', description: '', priority: 'medium' });
-      setShowForm(false);
+      resetForm();
+      setDialogOpen(false);
     } catch (error) {
       console.error('Error adding incident:', error);
+      alert('Failed to create incident. Please check all fields.');
     }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      description: '',
+      priority: 'medium',
+      sourceComponents: [
+        { name: '', contributionStartTime: '', contributionEndTime: '' },
+      ],
+      incidentStartTime: '',
+      incidentEndTime: '',
+    });
+  };
+
+  const addSourceComponent = () => {
+    setFormData({
+      ...formData,
+      sourceComponents: [
+        ...formData.sourceComponents,
+        { name: '', contributionStartTime: '', contributionEndTime: '' },
+      ],
+    });
+  };
+
+  const removeSourceComponent = (index: number) => {
+    setFormData({
+      ...formData,
+      sourceComponents: formData.sourceComponents.filter((_, i) => i !== index),
+    });
+  };
+
+  const updateSourceComponent = (
+    index: number,
+    field: keyof SourceComponent,
+    value: string
+  ) => {
+    const updated = [...formData.sourceComponents];
+    updated[index] = { ...updated[index], [field]: value };
+    setFormData({ ...formData, sourceComponents: updated });
   };
 
   const updateIncidentStatus = async (id: number, status: IncidentStatus) => {
@@ -165,7 +267,7 @@ export default function Home() {
               Track and manage system incidents
             </p>
           </div>
-          <Button onClick={() => setShowForm(!showForm)}>
+          <Button onClick={() => setDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             New Incident
           </Button>
@@ -193,83 +295,225 @@ export default function Home() {
           </Card>
         </div>
 
-        {/* Create Form */}
-        {showForm && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Create New Incident</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={addIncident} className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Title
-                  </label>
-                  <Input
-                    value={formData.title}
-                    onChange={(e) =>
-                      setFormData({ ...formData, title: e.target.value })
-                    }
-                    placeholder="Enter incident title..."
-                    required
-                  />
+        {/* Search Bar */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search incidents by title, description, or source component..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6"
+                  onClick={() => setSearchQuery('')}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Create Incident Dialog */}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Create New Incident</DialogTitle>
+              <DialogDescription>
+                Fill in the details to create a new incident
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={addIncident} className="space-y-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Title</label>
+                <Input
+                  value={formData.title}
+                  onChange={(e) =>
+                    setFormData({ ...formData, title: e.target.value })
+                  }
+                  placeholder="Enter incident title..."
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">
+                  Description
+                </label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                  placeholder="Describe the incident..."
+                  rows={4}
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">Priority</label>
+                <Select
+                  value={formData.priority}
+                  onValueChange={(value: IncidentPriority) =>
+                    setFormData({ ...formData, priority: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Incident Times</label>
                 </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Description
-                  </label>
-                  <Textarea
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
-                    }
-                    placeholder="Describe the incident..."
-                    rows={4}
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">
+                      Start Time
+                    </label>
+                    <Input
+                      type="datetime-local"
+                      value={formData.incidentStartTime}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          incidentStartTime: e.target.value,
+                        })
+                      }
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">
+                      End Time (Optional)
+                    </label>
+                    <Input
+                      type="datetime-local"
+                      value={formData.incidentEndTime}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          incidentEndTime: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Priority
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">
+                    Source Components
                   </label>
-                  <Select
-                    value={formData.priority}
-                    onValueChange={(value: IncidentPriority) =>
-                      setFormData({ ...formData, priority: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="critical">Critical</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex gap-2">
-                  <Button type="submit">Create Incident</Button>
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setShowForm(false);
-                      setFormData({
-                        title: '',
-                        description: '',
-                        priority: 'medium',
-                      });
-                    }}
+                    size="sm"
+                    onClick={addSourceComponent}
                   >
-                    Cancel
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Component
                   </Button>
                 </div>
-              </form>
-            </CardContent>
-          </Card>
-        )}
+                {formData.sourceComponents.map((component, index) => (
+                  <Card key={index} className="p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">
+                          Component {index + 1}
+                        </span>
+                        {formData.sourceComponents.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeSourceComponent(index)}
+                            className="h-6 w-6 text-destructive"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      <Input
+                        placeholder="Component name..."
+                        value={component.name}
+                        onChange={(e) =>
+                          updateSourceComponent(index, 'name', e.target.value)
+                        }
+                        required
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground mb-1 block">
+                            Contribution Start
+                          </label>
+                          <Input
+                            type="datetime-local"
+                            value={component.contributionStartTime}
+                            onChange={(e) =>
+                              updateSourceComponent(
+                                index,
+                                'contributionStartTime',
+                                e.target.value
+                              )
+                            }
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground mb-1 block">
+                            Contribution End
+                          </label>
+                          <Input
+                            type="datetime-local"
+                            value={component.contributionEndTime}
+                            onChange={(e) =>
+                              updateSourceComponent(
+                                index,
+                                'contributionEndTime',
+                                e.target.value
+                              )
+                            }
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDialogOpen(false);
+                    resetForm();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">Create Incident</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         {/* Incidents List */}
         <Card>
@@ -278,7 +522,7 @@ export default function Home() {
             <CardDescription>
               {loading
                 ? 'Loading incidents...'
-                : `${incidents.length} total incident${incidents.length !== 1 ? 's' : ''}`}
+                : `${filteredIncidents.length} of ${incidents.length} incident${incidents.length !== 1 ? 's' : ''}${searchQuery ? ' (filtered)' : ''}`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -286,21 +530,25 @@ export default function Home() {
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : incidents.length === 0 ? (
+            ) : filteredIncidents.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No incidents yet. Create one to get started!</p>
+                <p>
+                  {searchQuery
+                    ? 'No incidents match your search.'
+                    : 'No incidents yet. Create one to get started!'}
+                </p>
               </div>
             ) : (
               <div className="space-y-4">
-                {incidents.map((incident) => (
+                {filteredIncidents.map((incident) => (
                   <div
                     key={incident.id}
                     className="p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold text-lg">
                             {incident.title}
                           </h3>
@@ -320,13 +568,29 @@ export default function Home() {
                         <p className="text-sm text-muted-foreground">
                           {incident.description}
                         </p>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span>Created: {formatDate(incident.createdAt)}</span>
-                          {incident.updatedAt !== incident.createdAt && (
+                        <div className="space-y-1">
+                          <div className="text-xs text-muted-foreground">
+                            <strong>Source Components:</strong>{' '}
+                            {incident.sourceComponents
+                              .map((c) => c.name)
+                              .join(', ') || 'None'}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            <strong>Incident Time:</strong>{' '}
+                            {formatDate(incident.incidentStartTime)}
+                            {incident.incidentEndTime &&
+                              ` - ${formatDate(incident.incidentEndTime)}`}
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
                             <span>
-                              Updated: {formatDate(incident.updatedAt)}
+                              Created: {formatDate(incident.createdAt)}
                             </span>
-                          )}
+                            {incident.updatedAt !== incident.createdAt && (
+                              <span>
+                                Updated: {formatDate(incident.updatedAt)}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
