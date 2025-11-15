@@ -84,6 +84,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -94,6 +95,8 @@ export default function Home() {
     incidentStartTime: '',
     incidentEndTime: '',
   });
+
+  const totalSteps = 4;
 
   useEffect(() => {
     fetchIncidents();
@@ -182,6 +185,38 @@ export default function Home() {
       incidentStartTime: '',
       incidentEndTime: '',
     });
+    setCurrentStep(1);
+  };
+
+  const validateStep = (step: number): boolean => {
+    switch (step) {
+      case 1:
+        return formData.title.trim() !== '' && formData.description.trim() !== '';
+      case 2:
+        return formData.incidentStartTime !== '';
+      case 3:
+        const validComponents = formData.sourceComponents.filter(
+          (comp) =>
+            comp.name.trim() &&
+            comp.contributionStartTime &&
+            comp.contributionEndTime
+        );
+        return validComponents.length > 0;
+      default:
+        return true;
+    }
+  };
+
+  const nextStep = () => {
+    if (validateStep(currentStep) && currentStep < totalSteps) {
+      setCurrentStep(currentStep + 1);
+    }
+  };
+
+  const prevStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+    }
   };
 
   const addSourceComponent = () => {
@@ -259,7 +294,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col p-8 md:p-12">
-      <div className="w-full max-w-6xl mx-auto space-y-6">
+      <div className="w-full max-w-6xl mx-auto space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-4xl font-bold">Incident Management</h1>
@@ -267,7 +302,12 @@ export default function Home() {
               Track and manage system incidents
             </p>
           </div>
-          <Button onClick={() => setDialogOpen(true)}>
+          <Button
+            onClick={() => {
+              resetForm();
+              setDialogOpen(true);
+            }}
+          >
             <Plus className="h-4 w-4 mr-2" />
             New Incident
           </Button>
@@ -322,181 +362,281 @@ export default function Home() {
         </Card>
 
         {/* Create Incident Dialog */}
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (!open) resetForm();
+          }}
+        >
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Incident</DialogTitle>
               <DialogDescription>
-                Fill in the details to create a new incident
+                Step {currentStep} of {totalSteps}:{' '}
+                {currentStep === 1 && 'Basic Information'}
+                {currentStep === 2 && 'Incident Times'}
+                {currentStep === 3 && 'Source Components'}
+                {currentStep === 4 && 'Review & Submit'}
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={addIncident} className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Title</label>
-                <Input
-                  value={formData.title}
-                  onChange={(e) =>
-                    setFormData({ ...formData, title: e.target.value })
-                  }
-                  placeholder="Enter incident title..."
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Description
-                </label>
-                <Textarea
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  placeholder="Describe the incident..."
-                  rows={4}
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">Priority</label>
-                <Select
-                  value={formData.priority}
-                  onValueChange={(value: IncidentPriority) =>
-                    setFormData({ ...formData, priority: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="critical">Critical</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Incident Times</label>
+            {/* Progress Indicator */}
+            <div className="flex items-center justify-between mb-6">
+              {[1, 2, 3, 4].map((step) => (
+                <div key={step} className="flex items-center flex-1">
+                  <div className="flex flex-col items-center flex-1">
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${
+                        step <= currentStep
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-background border-muted text-muted-foreground'
+                      }`}
+                    >
+                      {step < currentStep ? '✓' : step}
+                    </div>
+                    <div className="text-xs mt-1 text-center text-muted-foreground">
+                      {step === 1 && 'Basic Info'}
+                      {step === 2 && 'Times'}
+                      {step === 3 && 'Components'}
+                      {step === 4 && 'Review'}
+                    </div>
+                  </div>
+                  {step < totalSteps && (
+                    <div
+                      className={`h-1 flex-1 mx-2 ${
+                        step < currentStep ? 'bg-primary' : 'bg-muted'
+                      }`}
+                    />
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+              ))}
+            </div>
+
+            <form onSubmit={addIncident} className="space-y-4">
+              {/* Step 1: Basic Information */}
+              {currentStep === 1 && (
+                <div className="space-y-4">
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">
-                      Start Time
-                    </label>
+                    <label className="text-sm font-medium mb-2 block">Title</label>
                     <Input
-                      type="datetime-local"
-                      value={formData.incidentStartTime}
+                      value={formData.title}
                       onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          incidentStartTime: e.target.value,
-                        })
+                        setFormData({ ...formData, title: e.target.value })
                       }
+                      placeholder="Enter incident title..."
                       required
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">
-                      End Time (Optional)
+                    <label className="text-sm font-medium mb-2 block">
+                      Description
                     </label>
-                    <Input
-                      type="datetime-local"
-                      value={formData.incidentEndTime}
+                    <Textarea
+                      value={formData.description}
                       onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          incidentEndTime: e.target.value,
-                        })
+                        setFormData({ ...formData, description: e.target.value })
                       }
+                      placeholder="Describe the incident..."
+                      rows={4}
+                      required
                     />
                   </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Priority</label>
+                    <Select
+                      value={formData.priority}
+                      onValueChange={(value: IncidentPriority) =>
+                        setFormData({ ...formData, priority: value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="critical">Critical</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">
-                    Source Components
-                  </label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addSourceComponent}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Component
-                  </Button>
-                </div>
-                {formData.sourceComponents.map((component, index) => (
-                  <Card key={index} className="p-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">
-                          Component {index + 1}
-                        </span>
-                        {formData.sourceComponents.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeSourceComponent(index)}
-                            className="h-6 w-6 text-destructive"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
+              {/* Step 2: Incident Times */}
+              {currentStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">
+                        Start Time
+                      </label>
                       <Input
-                        placeholder="Component name..."
-                        value={component.name}
+                        type="datetime-local"
+                        value={formData.incidentStartTime}
                         onChange={(e) =>
-                          updateSourceComponent(index, 'name', e.target.value)
+                          setFormData({
+                            ...formData,
+                            incidentStartTime: e.target.value,
+                          })
                         }
                         required
                       />
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs text-muted-foreground mb-1 block">
-                            Contribution Start
-                          </label>
-                          <Input
-                            type="datetime-local"
-                            value={component.contributionStartTime}
-                            onChange={(e) =>
-                              updateSourceComponent(
-                                index,
-                                'contributionStartTime',
-                                e.target.value
-                              )
-                            }
-                            required
-                          />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">
+                        End Time (Optional)
+                      </label>
+                      <Input
+                        type="datetime-local"
+                        value={formData.incidentEndTime}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            incidentEndTime: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Source Components */}
+              {currentStep === 3 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">
+                      Source Components
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addSourceComponent}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Component
+                    </Button>
+                  </div>
+                  {formData.sourceComponents.map((component, index) => (
+                    <Card key={index} className="p-4">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">
+                            Component {index + 1}
+                          </span>
+                          {formData.sourceComponents.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeSourceComponent(index)}
+                              className="h-6 w-6 text-destructive"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground mb-1 block">
-                            Contribution End
-                          </label>
-                          <Input
-                            type="datetime-local"
-                            value={component.contributionEndTime}
-                            onChange={(e) =>
-                              updateSourceComponent(
-                                index,
-                                'contributionEndTime',
-                                e.target.value
-                              )
-                            }
-                            required
-                          />
+                        <Input
+                          placeholder="Component name..."
+                          value={component.name}
+                          onChange={(e) =>
+                            updateSourceComponent(index, 'name', e.target.value)
+                          }
+                          required
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">
+                              Contribution Start
+                            </label>
+                            <Input
+                              type="datetime-local"
+                              value={component.contributionStartTime}
+                              onChange={(e) =>
+                                updateSourceComponent(
+                                  index,
+                                  'contributionStartTime',
+                                  e.target.value
+                                )
+                              }
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">
+                              Contribution End
+                            </label>
+                            <Input
+                              type="datetime-local"
+                              value={component.contributionEndTime}
+                              onChange={(e) =>
+                                updateSourceComponent(
+                                  index,
+                                  'contributionEndTime',
+                                  e.target.value
+                                )
+                              }
+                              required
+                            />
+                          </div>
                         </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* Step 4: Review */}
+              {currentStep === 4 && (
+                <div className="space-y-4">
+                  <Card className="p-4">
+                    <h3 className="font-semibold mb-3">Review Incident Details</h3>
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <span className="font-medium">Title:</span>{' '}
+                        {formData.title || 'Not provided'}
+                      </div>
+                      <div>
+                        <span className="font-medium">Description:</span>{' '}
+                        {formData.description || 'Not provided'}
+                      </div>
+                      <div>
+                        <span className="font-medium">Priority:</span>{' '}
+                        {priorityLabels[formData.priority]}
+                      </div>
+                      <div>
+                        <span className="font-medium">Incident Start Time:</span>{' '}
+                        {formData.incidentStartTime
+                          ? new Date(formData.incidentStartTime).toLocaleString()
+                          : 'Not provided'}
+                      </div>
+                      {formData.incidentEndTime && (
+                        <div>
+                          <span className="font-medium">Incident End Time:</span>{' '}
+                          {new Date(formData.incidentEndTime).toLocaleString()}
+                        </div>
+                      )}
+                      <div>
+                        <span className="font-medium">Source Components:</span>
+                        <ul className="list-disc list-inside mt-1 ml-2">
+                          {formData.sourceComponents
+                            .filter((c) => c.name.trim())
+                            .map((comp, idx) => (
+                              <li key={idx}>
+                                {comp.name} (
+                                {new Date(comp.contributionStartTime).toLocaleString()} -{' '}
+                                {new Date(comp.contributionEndTime).toLocaleString()})
+                              </li>
+                            ))}
+                        </ul>
                       </div>
                     </div>
                   </Card>
-                ))}
-              </div>
+                </div>
+              )}
 
               <DialogFooter>
                 <Button
@@ -509,7 +649,22 @@ export default function Home() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit">Create Incident</Button>
+                {currentStep > 1 && (
+                  <Button type="button" variant="outline" onClick={prevStep}>
+                    Previous
+                  </Button>
+                )}
+                {currentStep < totalSteps ? (
+                  <Button
+                    type="button"
+                    onClick={nextStep}
+                    disabled={!validateStep(currentStep)}
+                  >
+                    Next
+                  </Button>
+                ) : (
+                  <Button type="submit">Create Incident</Button>
+                )}
               </DialogFooter>
             </form>
           </DialogContent>

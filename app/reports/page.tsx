@@ -84,8 +84,8 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="flex flex-col p-8 md:p-24">
-      <div className="w-full max-w-6xl mx-auto space-y-6">
+    <div className="flex flex-col p-8 md:p-12">
+      <div className="w-full max-w-6xl mx-auto space-y-4">
         <div>
           <h1 className="text-4xl font-bold">Reports</h1>
           <p className="text-muted-foreground mt-2">
